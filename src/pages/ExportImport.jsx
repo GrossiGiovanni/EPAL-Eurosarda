@@ -44,13 +44,52 @@ export default function ExportImport() {
     setLoad('corr', false)
   }
 
+  const salvaImport = async ({ clienti, movimenti }) => {
+    // Upsert clienti per nome
+    const { error: errClienti } = await supabase
+      .from('clienti')
+      .upsert(
+        clienti.map(c => ({
+          nome: c.nome,
+          ...(c.codice != null && { codice: Number(c.codice) }),
+          ...(c.contatto != null && { contatto: String(c.contatto) }),
+        })),
+        { onConflict: 'nome', ignoreDuplicates: false }
+      )
+    if (errClienti) throw new Error('Errore salvataggio clienti: ' + errClienti.message)
+
+    // Recupera IDs clienti
+    const { data: tuttiClienti } = await supabase.from('clienti').select('id, nome')
+    const idMap = Object.fromEntries(tuttiClienti.map(c => [c.nome, c.id]))
+
+    // Per ogni cliente: elimina movimenti esistenti e reinserisce dall'Excel
+    for (const cliente of clienti) {
+      const clienteId = idMap[cliente.nome]
+      if (!clienteId) continue
+      await supabase.from('movimenti_clienti').delete().eq('cliente_id', clienteId)
+      const movimentiCliente = movimenti
+        .filter(m => m._cliente === cliente.nome)
+        .map(({ _cliente, ...m }) => ({ ...m, cliente_id: clienteId }))
+      if (movimentiCliente.length > 0) {
+        const { error } = await supabase.from('movimenti_clienti').insert(movimentiCliente)
+        if (error) throw new Error(`Errore movimenti ${cliente.nome}: ${error.message}`)
+      }
+    }
+  }
+
   const handleImport = async (e) => {
     const file = e.target.files[0]
     if (!file) return
     setLoad('import', true)
     try {
       const result = await importExcelClienti(file)
-      showToast(`Importati ${result.movimenti.length} movimenti da ${result.clienti.length} clienti. Verifica i dati prima di procedere.`, 'success')
+      const ok = window.confirm(
+        `Trovati ${result.movimenti.length} movimenti da ${result.clienti.length} clienti.\n\nConfermi l'importazione? I movimenti esistenti per questi clienti verranno sostituiti.`
+      )
+      if (ok) {
+        await salvaImport(result)
+        showToast(`Importazione completata: ${result.movimenti.length} movimenti da ${result.clienti.length} clienti.`, 'success')
+      }
     } catch (err) {
       showToast('Errore importazione: ' + err.message, 'error')
     }
@@ -122,7 +161,7 @@ export default function ExportImport() {
             <input id="file-import" type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleImport} />
           </label>
           <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text3)' }}>
-            ⚠️ Funzionalità in sviluppo — verifica sempre i dati prima di confermare l'importazione
+            I movimenti esistenti dei clienti importati verranno sostituiti con i dati del file Excel.
           </div>
         </div>
 
