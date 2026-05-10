@@ -10,7 +10,8 @@ CREATE TABLE clienti (
   codice INTEGER,
   contatto TEXT,
   a_perdere BOOLEAN DEFAULT FALSE,
-  costo_epal NUMERIC DEFAULT 10,
+  costo_epal NUMERIC DEFAULT 1,        -- euro per singolo EPAL (da Excel EURO/EPAL)
+  franchigia_pct NUMERIC DEFAULT 0,    -- franchigia % (es. 0.05 = 5%)
   note TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -122,11 +123,16 @@ SELECT
   c.contatto,
   c.a_perdere,
   c.costo_epal,
+  c.franchigia_pct,
   COALESCE(SUM(m.affidati), 0) - COALESCE(SUM(m.consegnati), 0) AS saldo,
+  ROUND(
+    (COALESCE(SUM(m.affidati), 0) - COALESCE(SUM(m.consegnati), 0)) * (1 - COALESCE(c.franchigia_pct, 0)),
+    2
+  ) AS saldo_con_franchigia,
   COUNT(CASE WHEN m.anomalia IS NOT NULL AND m.anomalia != '' THEN 1 END) AS anomalie_aperte
 FROM clienti c
 LEFT JOIN movimenti_clienti m ON c.id = m.cliente_id
-GROUP BY c.id, c.nome, c.codice, c.contatto, c.a_perdere, c.costo_epal;
+GROUP BY c.id, c.nome, c.codice, c.contatto, c.a_perdere, c.costo_epal, c.franchigia_pct;
 
 -- Saldo corrente per corrispondente
 CREATE OR REPLACE VIEW saldi_corrispondenti AS
@@ -138,6 +144,10 @@ SELECT
   c.franchigia_pct,
   c.tipo,
   COALESCE(SUM(m.affidati), 0) - COALESCE(SUM(COALESCE(m.riscontro_scarico, m.ricevuti)), 0) AS saldo_lordo,
+  ROUND(
+    (COALESCE(SUM(m.affidati), 0) - COALESCE(SUM(COALESCE(m.riscontro_scarico, m.ricevuti)), 0)) * (1 - COALESCE(c.franchigia_pct, 0)),
+    2
+  ) AS saldo_con_franchigia,
   COALESCE(SUM(m.differenza), 0) AS differenza_totale
 FROM corrispondenti c
 LEFT JOIN movimenti_corrispondenti m ON c.id = m.corrispondente_id

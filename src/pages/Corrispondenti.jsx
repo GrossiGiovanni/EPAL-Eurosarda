@@ -122,7 +122,7 @@ function CorrRow({ corr, onRefresh }) {
     onRefresh()
   }
 
-  const saldo = corr.saldo_lordo || 0
+  const saldo = corr.saldo_con_franchigia ?? corr.saldo_lordo ?? 0
   const diff = corr.differenza_totale || 0
   const franchigia = corr.franchigia_pct || 0
 

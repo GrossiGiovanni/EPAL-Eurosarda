@@ -16,6 +16,9 @@ export function exportClientiExcel(clienti, movimenti) {
     const movCliente = movimenti.filter(m => m.cliente_id === cliente.id)
       .sort((a, b) => new Date(a.data) - new Date(b.data))
 
+    const saldoLordo = cliente.saldo ?? 0
+    const franchigia = cliente.franchigia_pct ?? 0
+    const saldoCF = Math.round(saldoLordo * (1 - franchigia) * 100) / 100
     const rows = [
       [' DATA', `CONSEGNATI A ${cliente.nome}`, 'AFFIDATI AD EUROSARDA', 'ANOMALIA', 'N.', 'RIF.', 'FATTURATO'],
       ...movCliente.map(m => [
@@ -28,7 +31,12 @@ export function exportClientiExcel(clienti, movimenti) {
         m.fatturato ? 'SI' : null
       ]),
       [],
-      ['', '', '', '', '', '', '', '', '', 'SALDO', cliente.saldo ?? 0, '', 'CONTATTO', cliente.contatto || ''],
+      ['', '', '', '', '', '', '', '', '', 'CODICE', cliente.codice || '', '', 'BACK', null],
+      ['', '', '', '', '', '', '', '', '', 'SALDO', saldoLordo, '', 'CONTATTO', cliente.contatto || ''],
+      ['', '', '', '', '', '', '', '', '', 'FRANCHIGIA', franchigia || null],
+      ['', '', '', '', '', '', '', '', '', 'EURO/EPAL', cliente.costo_epal || null],
+      ['', '', '', '', '', '', '', '', '', 'POLMONE', null],
+      ['', '', '', '', '', '', '', '', '', 'SALDO CON FRANCHIGIA', saldoCF],
     ]
 
     const ws = XLSX.utils.aoa_to_sheet(rows)
@@ -94,34 +102,48 @@ export function importExcelClienti(file) {
           const ws = wb.Sheets[sheetName]
           const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
 
-          let saldo = null, codice = null, contatto = null
+          let saldo = null, codice = null, contatto = null, franchigia = null, euroEpal = null
           const movimenti = []
 
           rows.forEach(row => {
             if (!row) return
+            // Leggi tutti i campi metadata cercando le chiavi nella riga
             for (let i = 0; i < row.length; i++) {
-              if (row[i] === 'SALDO' && row[i + 1] !== undefined) saldo = row[i + 1]
-              if (row[i] === 'CODICE' && row[i + 1] !== undefined) codice = row[i + 1]
-              if (row[i] === 'CONTATTO' && row[i + 1] !== undefined) contatto = row[i + 1]
+              if (row[i] === 'SALDO' && row[i + 1] != null) saldo = row[i + 1]
+              if (row[i] === 'CODICE' && row[i + 1] != null) codice = row[i + 1]
+              if (row[i] === 'CONTATTO' && row[i + 1] != null) contatto = row[i + 1]
+              if (row[i] === 'FRANCHIGIA' && row[i + 1] != null) franchigia = row[i + 1]
+              if (row[i] === 'EURO/EPAL' && row[i + 1] != null) euroEpal = row[i + 1]
             }
 
-            // Riga dati (ha una data nella prima colonna)
-            if (row[0] instanceof Date || (typeof row[0] === 'string' && row[0].match(/\d{4}/))) {
+            // Riga dati: ha una data (Date o stringa con anno) nella prima colonna
+            const isDate = row[0] instanceof Date ||
+              (typeof row[0] === 'string' && row[0].match(/^\d{4}-\d{2}-\d{2}/))
+            if (isDate) {
               const data = row[0] instanceof Date ? row[0].toISOString().split('T')[0] : row[0]
-              if (data && (row[1] || row[2])) {
+              const consegnati = Number(row[1]) || 0
+              const affidati = Number(row[2]) || 0
+              if (data && (consegnati > 0 || affidati > 0)) {
                 movimenti.push({
                   data,
-                  consegnati: row[1] ? Number(row[1]) : 0,
-                  affidati: row[2] ? Number(row[2]) : 0,
+                  consegnati,
+                  affidati,
                   anomalia: row[3] || null,
-                  quantita_anomalia: row[4] ? Number(row[4]) : 0,
+                  quantita_anomalia: Number(row[4]) || 0,
                   riferimento: row[5] ? String(row[5]) : null,
                 })
               }
             }
           })
 
-          result.clienti.push({ nome: sheetName, codice, contatto, saldo_importato: saldo })
+          result.clienti.push({
+            nome: sheetName,
+            codice: codice != null ? Number(codice) : null,
+            contatto: contatto != null ? String(contatto) : null,
+            franchigia_pct: franchigia != null ? Number(franchigia) : null,
+            costo_epal: euroEpal != null ? Number(euroEpal) : null,
+            saldo_importato: saldo,
+          })
           result.movimenti.push(...movimenti.map(m => ({ ...m, _cliente: sheetName })))
         })
 

@@ -109,9 +109,10 @@ function ClienteRow({ cliente, onRefresh }) {
     onRefresh()
   }
 
-  const saldo = cliente.saldo || 0
+  const saldo = cliente.saldo_con_franchigia ?? cliente.saldo ?? 0
   // credito nostro (saldo < 0) = il cliente ci deve pallet → valore da recuperare/fatturare
-  const valoreFatturabile = Math.abs(Math.min(0, saldo)) * (cliente.costo_epal || 10)
+  const euroEpal = cliente.costo_epal || 1
+  const valoreFatturabile = Math.abs(Math.min(0, saldo)) * euroEpal
 
   return (
     <>
@@ -141,7 +142,7 @@ function ClienteRow({ cliente, onRefresh }) {
           </span>
         </td>
         <td className="num" style={{ color: 'var(--text2)' }}>
-          {saldo < 0 ? `€ ${formatNum(valoreFatturabile)}` : '—'}
+          {saldo < 0 ? `€ ${formatNum(valoreFatturabile)}` : saldo > 0 ? `${formatNum(saldo)} pz` : '—'}
         </td>
         <td>
           <span className={`badge ${saldo < 0 ? 'badge-green' : saldo > 0 ? 'badge-blue' : 'badge-gray'}`}>
@@ -229,14 +230,14 @@ export default function Clienti() {
 
   const filtered = clienti.filter(c => {
     const matchSearch = c.nome.toLowerCase().includes(search.toLowerCase())
-    if (tab === 'attivi') return matchSearch && !c.a_perdere && (c.saldo || 0) !== 0
+    if (tab === 'attivi') return matchSearch && !c.a_perdere && (c.saldo_con_franchigia ?? c.saldo ?? 0) !== 0
     if (tab === 'tutti') return matchSearch && !c.a_perdere
     if (tab === 'anomalie') return matchSearch && (c.anomalie_aperte || 0) > 0
     if (tab === 'perdere') return matchSearch && c.a_perdere
     return matchSearch
   })
 
-  const totSaldo = clienti.filter(c => !c.a_perdere).reduce((s, c) => s + Math.max(0, c.saldo || 0), 0)
+  const totSaldo = clienti.filter(c => !c.a_perdere).reduce((s, c) => s + Math.max(0, c.saldo_con_franchigia ?? c.saldo ?? 0), 0)
 
   return (
     <div>
@@ -244,7 +245,7 @@ export default function Clienti() {
         <div>
           <div className="page-title">Clienti</div>
           <div className="page-subtitle">
-            {clienti.filter(c => !c.a_perdere && (c.saldo||0) > 0).length} clienti con saldo attivo · Totale: {formatNum(totSaldo)} pallet
+            {clienti.filter(c => !c.a_perdere && (c.saldo_con_franchigia ?? c.saldo ?? 0) > 0).length} clienti con saldo attivo · Totale: {formatNum(totSaldo)} pallet
           </div>
         </div>
       </div>
@@ -279,7 +280,7 @@ export default function Clienti() {
                 <th>Cliente</th>
                 <th>Codice</th>
                 <th className="num">Saldo EPAL</th>
-                <th className="num">Valore (€10/pz)</th>
+                <th className="num">Valore / Quantità</th>
                 <th>Stato</th>
                 <th></th>
               </tr>
