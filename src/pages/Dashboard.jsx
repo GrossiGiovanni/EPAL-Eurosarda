@@ -47,12 +47,13 @@ export default function Dashboard({ setPage }) {
       supabase.from('inventario').select('*').order('data', { ascending: false }).limit(1),
     ])
 
-    const totalePallet = (saldi_c || []).reduce((s, c) => s + Math.max(0, c.saldo || 0), 0)
-    const creditiClienti = (saldi_c || []).filter(c => (c.saldo || 0) < 0).reduce((s, c) => s + (c.saldo || 0), 0)
+    const getSaldo = c => c.saldo_con_franchigia ?? c.saldo ?? 0
+    const totalePallet = (saldi_c || []).reduce((s, c) => s + Math.max(0, getSaldo(c)), 0)
+    const creditiClienti = (saldi_c || []).filter(c => getSaldo(c) < 0).reduce((s, c) => s + getSaldo(c), 0)
     const anomalieAperte = (anomalie || []).length
     const top10 = (saldi_c || [])
-      .filter(c => (c.saldo || 0) > 0)
-      .sort((a, b) => (b.saldo || 0) - (a.saldo || 0))
+      .filter(c => getSaldo(c) > 0)
+      .sort((a, b) => getSaldo(b) - getSaldo(a))
       .slice(0, 10)
 
     const corrData = (saldi_k || []).map(c => ({
@@ -68,7 +69,7 @@ export default function Dashboard({ setPage }) {
       inventario: ultimo_inv?.[0]?.quantita,
       top10,
       corrData,
-      totClienti: (saldi_c || []).filter(c => (c.saldo || 0) !== 0).length,
+      totClienti: (saldi_c || []).filter(c => getSaldo(c) !== 0).length,
     })
     setLoading(false)
   }
@@ -143,7 +144,7 @@ export default function Dashboard({ setPage }) {
                 <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--text3)', fontFamily: 'var(--font-mono)' }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="nome" tick={{ fontSize: 11, fill: 'var(--text2)' }} axisLine={false} tickLine={false} width={100} />
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                <Bar dataKey="saldo" radius={[0, 4, 4, 0]}>
+                <Bar dataKey="saldo_con_franchigia" radius={[0, 4, 4, 0]}>
                   {data.top10.map((_, i) => (
                     <Cell key={i} fill={`rgba(79,142,247,${1 - i * 0.07})`} />
                   ))}

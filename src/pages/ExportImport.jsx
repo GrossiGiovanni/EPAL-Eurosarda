@@ -45,7 +45,7 @@ export default function ExportImport() {
   }
 
   const salvaImport = async ({ clienti, movimenti }) => {
-    // Upsert clienti per nome
+    // Upsert clienti per nome — aggiorna codice, contatto, franchigia, euro/epal se presenti nel file
     const { error: errClienti } = await supabase
       .from('clienti')
       .upsert(
@@ -53,6 +53,8 @@ export default function ExportImport() {
           nome: c.nome,
           ...(c.codice != null && { codice: Number(c.codice) }),
           ...(c.contatto != null && { contatto: String(c.contatto) }),
+          ...(c.franchigia_pct != null && { franchigia_pct: Number(c.franchigia_pct) }),
+          ...(c.costo_epal != null && { costo_epal: Number(c.costo_epal) }),
         })),
         { onConflict: 'nome', ignoreDuplicates: false }
       )
