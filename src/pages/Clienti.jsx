@@ -110,7 +110,8 @@ function ClienteRow({ cliente, onRefresh }) {
   }
 
   const saldo = cliente.saldo || 0
-  const valoreFatturabile = Math.max(0, saldo) * (cliente.costo_epal || 10)
+  // credito nostro (saldo < 0) = il cliente ci deve pallet → valore da recuperare/fatturare
+  const valoreFatturabile = Math.abs(Math.min(0, saldo)) * (cliente.costo_epal || 10)
 
   return (
     <>
@@ -135,16 +136,16 @@ function ClienteRow({ cliente, onRefresh }) {
         </td>
         <td className="mono" style={{ color: 'var(--text3)', fontSize: 12 }}>{cliente.codice || '—'}</td>
         <td className="num">
-          <span className={saldo > 0 ? 'positive' : saldo < 0 ? 'negative' : 'neutral'}>
+          <span className={saldo < 0 ? 'positive' : 'neutral'}>
             {saldo > 0 ? '+' : ''}{formatNum(saldo)}
           </span>
         </td>
         <td className="num" style={{ color: 'var(--text2)' }}>
-          {saldo > 0 ? `€ ${formatNum(valoreFatturabile)}` : '—'}
+          {saldo < 0 ? `€ ${formatNum(valoreFatturabile)}` : '—'}
         </td>
         <td>
-          <span className={`badge ${saldo > 0 ? 'badge-blue' : saldo < 0 ? 'badge-green' : 'badge-gray'}`}>
-            {saldo > 0 ? 'Nostro credito' : saldo < 0 ? 'Loro credito' : 'Pari'}
+          <span className={`badge ${saldo < 0 ? 'badge-green' : saldo > 0 ? 'badge-blue' : 'badge-gray'}`}>
+            {saldo > 0 ? 'Debito nostro' : saldo < 0 ? 'Credito nostro' : 'Pari'}
           </span>
         </td>
         <td onClick={e => e.stopPropagation()}>

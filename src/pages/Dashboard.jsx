@@ -168,14 +168,14 @@ export default function Dashboard({ setPage }) {
                   <div style={{ flex: 1, height: 6, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}>
                     <div style={{
                       height: '100%', borderRadius: 3,
-                      background: c.differenza > 0 ? 'var(--red)' : c.differenza < 0 ? 'var(--green)' : 'var(--border)',
+                      background: c.differenza > 0 ? 'var(--green)' : c.differenza < 0 ? 'var(--red)' : 'var(--border)',
                       width: `${Math.min(100, Math.abs(c.differenza) / 50 * 100)}%`,
                       transition: 'width 0.4s ease',
                     }} />
                   </div>
                   <div style={{
                     fontSize: 12, fontFamily: 'var(--font-mono)', width: 50, textAlign: 'right',
-                    color: c.differenza > 0 ? 'var(--red)' : c.differenza < 0 ? 'var(--green)' : 'var(--text3)'
+                    color: c.differenza > 0 ? 'var(--green)' : c.differenza < 0 ? 'var(--red)' : 'var(--text3)'
                   }}>
                     {c.differenza > 0 ? '+' : ''}{formatNum(c.differenza)}
                   </div>
