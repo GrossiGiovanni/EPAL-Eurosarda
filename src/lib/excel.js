@@ -157,6 +157,72 @@ export function importExcelClienti(file) {
   })
 }
 
+export function importExcelCorrispondenti(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true })
+        const result = { corrispondenti: [], movimenti: [] }
+
+        // Determina trazionisti dall'INDICE (colonna 8)
+        const trazionisti = new Set()
+        if (wb.SheetNames.includes('INDICE')) {
+          const rowsIndice = XLSX.utils.sheet_to_json(wb.Sheets['INDICE'], { header: 1, defval: null })
+          rowsIndice.forEach(row => {
+            if (row && row[8] && typeof row[8] === 'string' && row[8] !== 'TRAZIONISTI')
+              trazionisti.add(row[8])
+          })
+        }
+
+        wb.SheetNames.filter(n => n !== 'INDICE').forEach(sheetName => {
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: null })
+          let codice = null, contatto = null
+          const movimenti = []
+
+          rows.forEach(row => {
+            if (!row) return
+            for (let i = 0; i < row.length; i++) {
+              if (row[i] === 'CODICE' && row[i + 1] != null) codice = row[i + 1]
+              if (row[i] === 'CONTATTO' && row[i + 1] != null) contatto = row[i + 1]
+            }
+            const isDate = row[0] instanceof Date ||
+              (typeof row[0] === 'string' && row[0].match(/^\d{4}-\d{2}-\d{2}/))
+            if (isDate) {
+              const data = row[0] instanceof Date ? row[0].toISOString().split('T')[0] : row[0]
+              const affidati = Number(row[2]) || 0
+              const ricevuti = Number(row[3]) || 0
+              const riscontro = row[4] != null && row[4] !== '' ? Number(row[4]) : null
+              const differenza = Number(row[5]) || (affidati - (riscontro ?? ricevuti))
+              if (data && (affidati > 0 || ricevuti > 0)) {
+                movimenti.push({
+                  data, distinta: row[1] ? String(row[1]) : null,
+                  affidati, ricevuti,
+                  riscontro_scarico: riscontro,
+                  differenza,
+                  anomalia: row[6] || null,
+                })
+              }
+            }
+          })
+
+          result.corrispondenti.push({
+            nome: sheetName,
+            codice: codice != null ? Number(codice) : null,
+            contatto: contatto != null ? String(contatto) : null,
+            tipo: trazionisti.has(sheetName) ? 'trazionista' : 'corrispondente',
+          })
+          result.movimenti.push(...movimenti.map(m => ({ ...m, _corrispondente: sheetName })))
+        })
+
+        resolve(result)
+      } catch (err) { reject(err) }
+    }
+    reader.onerror = reject
+    reader.readAsArrayBuffer(file)
+  })
+}
+
 function formatDateFile() {
   const d = new Date()
   return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { exportClientiExcel, exportCorrispondentiExcel, importExcelClienti } from '../lib/excel'
+import { exportClientiExcel, exportCorrispondentiExcel, importExcelClienti, importExcelCorrispondenti } from '../lib/excel'
 import { Download, Upload, Package, RefreshCw, CheckCircle, AlertCircle, Database } from 'lucide-react'
 import { useToast } from '../hooks/useToast.jsx'
 import { formatDate, formatNum } from '../lib/excel'
@@ -77,6 +77,57 @@ export default function ExportImport() {
         if (error) throw new Error(`Errore movimenti ${cliente.nome}: ${error.message}`)
       }
     }
+  }
+
+  const salvaImportCorrispondenti = async ({ corrispondenti, movimenti }) => {
+    const { error: errCorr } = await supabase
+      .from('corrispondenti')
+      .upsert(
+        corrispondenti.map(c => ({
+          nome: c.nome,
+          ...(c.codice != null && { codice: Number(c.codice) }),
+          ...(c.contatto != null && { contatto: String(c.contatto) }),
+          ...(c.tipo != null && { tipo: c.tipo }),
+        })),
+        { onConflict: 'nome', ignoreDuplicates: false }
+      )
+    if (errCorr) throw new Error('Errore salvataggio corrispondenti: ' + errCorr.message)
+
+    const { data: tuttiCorr } = await supabase.from('corrispondenti').select('id, nome')
+    const idMap = Object.fromEntries(tuttiCorr.map(c => [c.nome, c.id]))
+
+    for (const corr of corrispondenti) {
+      const corrId = idMap[corr.nome]
+      if (!corrId) continue
+      await supabase.from('movimenti_corrispondenti').delete().eq('corrispondente_id', corrId)
+      const movCorr = movimenti
+        .filter(m => m._corrispondente === corr.nome)
+        .map(({ _corrispondente, ...m }) => ({ ...m, corrispondente_id: corrId }))
+      if (movCorr.length > 0) {
+        const { error } = await supabase.from('movimenti_corrispondenti').insert(movCorr)
+        if (error) throw new Error(`Errore movimenti ${corr.nome}: ${error.message}`)
+      }
+    }
+  }
+
+  const handleImportCorrispondenti = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setLoad('importCorr', true)
+    try {
+      const result = await importExcelCorrispondenti(file)
+      const ok = window.confirm(
+        `Trovati ${result.movimenti.length} movimenti da ${result.corrispondenti.length} corrispondenti.\n\nConfermi l'importazione? I movimenti esistenti verranno sostituiti.`
+      )
+      if (ok) {
+        await salvaImportCorrispondenti(result)
+        showToast(`Importazione completata: ${result.movimenti.length} movimenti da ${result.corrispondenti.length} corrispondenti.`, 'success')
+      }
+    } catch (err) {
+      showToast('Errore importazione: ' + err.message, 'error')
+    }
+    setLoad('importCorr', false)
+    e.target.value = ''
   }
 
   const handleImport = async (e) => {
@@ -164,6 +215,27 @@ export default function ExportImport() {
           </label>
           <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text3)' }}>
             I movimenti esistenti dei clienti importati verranno sostituiti con i dati del file Excel.
+          </div>
+        </div>
+
+        {/* Import Corrispondenti */}
+        <div className="card">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <Upload size={18} style={{ color: 'var(--purple)' }} />
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Importa Corrispondenti</div>
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 20, lineHeight: 1.6 }}>
+            Carica il file Excel corrispondenti. I movimenti esistenti verranno sostituiti.
+          </p>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="btn btn-ghost" style={{ justifyContent: 'center', cursor: 'pointer' }}
+              onClick={() => document.getElementById('file-import-corr').click()}>
+              {loading.importCorr ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Analisi in corso...</> : <><Upload size={14} /> Seleziona EPAL_CORRISPONDENTI.xlsx</>}
+            </div>
+            <input id="file-import-corr" type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleImportCorrispondenti} />
+          </label>
+          <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text3)' }}>
+            Usa questo pulsante solo per il file EPAL CORRISPONDENTI — non CLIENTI.
           </div>
         </div>
 
