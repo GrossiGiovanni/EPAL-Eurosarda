@@ -133,8 +133,8 @@ function ClienteRow({ cliente, onRefresh }) {
 
   const saldo = cliente.saldo_con_franchigia ?? cliente.saldo ?? 0
   const euroEpal = cliente.costo_epal || 1
-  // saldo > 0: il cliente ci deve pallet (credito nostro) → valore fatturabile
-  const valoreFatturabile = Math.max(0, saldo) * euroEpal
+  // saldo < 0: il cliente ci deve pallet (credito nostro) → valore fatturabile
+  const valoreFatturabile = Math.abs(Math.min(0, saldo)) * euroEpal
 
   return (
     <>
@@ -168,16 +168,16 @@ function ClienteRow({ cliente, onRefresh }) {
         </td>
         <td className="mono" style={{ color: 'var(--text3)', fontSize: 12 }}>{cliente.codice || '—'}</td>
         <td className="num">
-          <span className={saldo > 0 ? 'positive' : saldo < 0 ? 'negative' : 'neutral'}>
+          <span className={saldo < 0 ? 'positive' : saldo > 0 ? 'neutral' : 'neutral'}>
             {saldo !== 0 ? (saldo > 0 ? '+' : '') + formatNum(saldo) : '—'}
           </span>
         </td>
         <td className="num" style={{ color: 'var(--text2)' }}>
-          {saldo > 0 ? `€ ${formatNum(valoreFatturabile)}` : saldo < 0 ? `${formatNum(Math.abs(saldo))} pz` : '—'}
+          {saldo < 0 ? `€ ${formatNum(valoreFatturabile)}` : saldo > 0 ? `${formatNum(saldo)} pz` : '—'}
         </td>
         <td>
-          <span className={`badge ${saldo > 0 ? 'badge-green' : saldo < 0 ? 'badge-blue' : 'badge-gray'}`}>
-            {saldo > 0 ? 'Credito nostro' : saldo < 0 ? 'Debito nostro' : 'Pari'}
+          <span className={`badge ${saldo > 0 ? 'badge-blue' : saldo < 0 ? 'badge-green' : 'badge-gray'}`}>
+            {saldo > 0 ? 'Debito nostro' : saldo < 0 ? 'Credito nostro' : 'Pari'}
           </span>
         </td>
         <td onClick={e => e.stopPropagation()}>
@@ -276,6 +276,7 @@ export default function Clienti() {
   })
 
   const totSaldo = clienti.filter(c => !c.a_perdere).reduce((s, c) => s + Math.max(0, getSaldo(c)), 0)
+  // clienti con saldo attivo (debito nostro > 0)
 
   return (
     <div>
@@ -283,7 +284,7 @@ export default function Clienti() {
         <div>
           <div className="page-title">Clienti</div>
           <div className="page-subtitle">
-            {clienti.filter(c => !c.a_perdere && getSaldo(c) > 0).length} clienti con credito · Totale: {formatNum(totSaldo)} pallet
+            {clienti.filter(c => !c.a_perdere && getSaldo(c) > 0).length} clienti con saldo attivo · Totale: {formatNum(totSaldo)} pallet in debito
           </div>
         </div>
       </div>
