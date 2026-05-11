@@ -49,16 +49,21 @@ export default function Dashboard({ setPage }) {
 
     const getSaldo = c => c.saldo_con_franchigia ?? c.saldo ?? 0
 
-    // Clienti: saldo > 0 = il cliente ci deve pallet (credito nostro)
-    const creditiClienti = (saldi_c || [])
+    // saldo > 0 = debito nostro (teniamo i loro pallet) → EPAL in circolazione
+    const debitoClienti = (saldi_c || [])
       .filter(c => getSaldo(c) > 0)
       .reduce((s, c) => s + getSaldo(c), 0)
+
+    // saldo < 0 = credito nostro (ci devono pallet)
+    const creditiClienti = (saldi_c || [])
+      .filter(c => getSaldo(c) < 0)
+      .reduce((s, c) => s + Math.abs(getSaldo(c)), 0)
 
     const totaliInTransito = (saldi_k || [])
       .reduce((s, c) => s + (c.pallet_in_transito || 0), 0)
 
-    // EPAL in circolazione = pallet presso clienti (credito) + pallet in transito
-    const epalInCircolazione = creditiClienti + totaliInTransito
+    // EPAL in circolazione = pallet presso clienti (debito) + pallet in transito
+    const epalInCircolazione = debitoClienti + totaliInTransito
 
     const anomalieAperte = (anomalie || []).length
 
@@ -82,7 +87,7 @@ export default function Dashboard({ setPage }) {
       inventario: ultimo_inv?.[0]?.quantita,
       top10,
       corrData,
-      totClienti: (saldi_c || []).filter(c => getSaldo(c) > 0).length,
+      totClienti: (saldi_c || []).filter(c => getSaldo(c) > 0).length, // con debito attivo
     })
     setLoading(false)
   }
@@ -112,7 +117,7 @@ export default function Dashboard({ setPage }) {
         <KpiCard
           label="EPAL in circolazione"
           value={formatNum(data.epalInCircolazione)}
-          sub={`Clienti + transito corrispondenti`}
+          sub={`${data.totClienti} clienti · transito corrispondenti`}
           color="var(--accent)"
           icon={Package}
           onClick={() => setPage('clienti')}
@@ -120,7 +125,7 @@ export default function Dashboard({ setPage }) {
         <KpiCard
           label="Crediti da clienti"
           value={formatNum(data.creditiClienti)}
-          sub={`${data.totClienti} clienti attivi`}
+          sub="Pallet che ci devono"
           color="var(--green)"
           icon={TrendingUp}
           onClick={() => setPage('clienti')}
