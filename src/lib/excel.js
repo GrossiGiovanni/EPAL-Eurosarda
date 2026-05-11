@@ -201,6 +201,7 @@ export function importExcelCorrispondenti(file) {
                   riscontro_scarico: riscontro,
                   differenza,
                   anomalia: row[6] || null,
+                  stato: riscontro != null ? 'scaricato' : 'in_transito',
                 })
               }
             }

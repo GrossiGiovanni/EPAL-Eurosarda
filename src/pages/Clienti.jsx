@@ -4,23 +4,38 @@ import { formatDate, formatNum } from '../lib/excel'
 import { Plus, Search, ChevronDown, ChevronUp, Edit2, Trash2, AlertCircle, X, Check } from 'lucide-react'
 import { useToast } from '../hooks/useToast.jsx'
 
-function MovimentoModal({ clienteId, clienteNome, onClose, onSaved }) {
-  const [form, setForm] = useState({ data: new Date().toISOString().split('T')[0], consegnati: '', affidati: '', anomalia: '', quantita_anomalia: '', riferimento: '' })
+const ANOMALIE = ['EPAL ROTTO', 'NON-EPAL', 'EPAL NON RESO', 'EPAL NON CONFORME']
+
+function MovimentoModal({ clienteId, clienteNome, movimento, onClose, onSaved }) {
+  const isEdit = !!movimento
+  const [form, setForm] = useState(isEdit ? {
+    data: movimento.data,
+    consegnati: String(movimento.consegnati || ''),
+    affidati: String(movimento.affidati || ''),
+    anomalia: movimento.anomalia || '',
+    quantita_anomalia: String(movimento.quantita_anomalia || ''),
+    riferimento: movimento.riferimento || '',
+  } : {
+    data: new Date().toISOString().split('T')[0],
+    consegnati: '', affidati: '', anomalia: '', quantita_anomalia: '', riferimento: '',
+  })
   const [loading, setLoading] = useState(false)
   const { showToast, ToastComponent } = useToast()
 
   const save = async () => {
     if (!form.data) return
     setLoading(true)
-    const { error } = await supabase.from('movimenti_clienti').insert({
-      cliente_id: clienteId,
+    const payload = {
       data: form.data,
       consegnati: parseInt(form.consegnati) || 0,
       affidati: parseInt(form.affidati) || 0,
       anomalia: form.anomalia || null,
       quantita_anomalia: parseInt(form.quantita_anomalia) || 0,
       riferimento: form.riferimento || null,
-    })
+    }
+    const { error } = isEdit
+      ? await supabase.from('movimenti_clienti').update(payload).eq('id', movimento.id)
+      : await supabase.from('movimenti_clienti').insert({ ...payload, cliente_id: clienteId })
     setLoading(false)
     if (error) { showToast('Errore: ' + error.message, 'error'); return }
     onSaved()
@@ -31,46 +46,46 @@ function MovimentoModal({ clienteId, clienteNome, onClose, onSaved }) {
       {ToastComponent}
       <div className="modal">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>Nuovo movimento — {clienteNome}</div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>{isEdit ? 'Modifica movimento' : 'Nuovo movimento'} — {clienteNome}</div>
           <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={14} /></button>
         </div>
 
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Data *</label>
-            <input className="input" type="date" value={form.data} onChange={e => setForm({...form, data: e.target.value})} />
+            <input className="input" type="date" value={form.data} onChange={e => setForm({ ...form, data: e.target.value })} />
           </div>
           <div className="form-group">
             <label className="form-label">Riferimento / Distinta</label>
-            <input className="input" placeholder="es. 3215" value={form.riferimento} onChange={e => setForm({...form, riferimento: e.target.value})} />
+            <input className="input" placeholder="es. 3215" value={form.riferimento} onChange={e => setForm({ ...form, riferimento: e.target.value })} />
           </div>
         </div>
 
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Consegnati a noi (resi)</label>
-            <input className="input" type="number" min="0" placeholder="0" value={form.consegnati} onChange={e => setForm({...form, consegnati: e.target.value})} />
+            <input className="input" type="number" min="0" step="1" placeholder="0"
+              value={form.consegnati} onChange={e => setForm({ ...form, consegnati: e.target.value })} />
           </div>
           <div className="form-group">
             <label className="form-label">Affidati a Eurosarda</label>
-            <input className="input" type="number" min="0" placeholder="0" value={form.affidati} onChange={e => setForm({...form, affidati: e.target.value})} />
+            <input className="input" type="number" min="0" step="1" placeholder="0"
+              value={form.affidati} onChange={e => setForm({ ...form, affidati: e.target.value })} />
           </div>
         </div>
 
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Anomalia</label>
-            <select className="input" value={form.anomalia} onChange={e => setForm({...form, anomalia: e.target.value})}>
+            <select className="input" value={form.anomalia} onChange={e => setForm({ ...form, anomalia: e.target.value })}>
               <option value="">Nessuna</option>
-              <option>EPAL ROTTO</option>
-              <option>NON-EPAL</option>
-              <option>EPAL NON RESO</option>
-              <option>EPAL NON CONFORME</option>
+              {ANOMALIE.map(a => <option key={a}>{a}</option>)}
             </select>
           </div>
           <div className="form-group">
             <label className="form-label">Quantità anomalia</label>
-            <input className="input" type="number" min="0" placeholder="0" value={form.quantita_anomalia} onChange={e => setForm({...form, quantita_anomalia: e.target.value})} />
+            <input className="input" type="number" min="0" step="1" placeholder="0"
+              value={form.quantita_anomalia} onChange={e => setForm({ ...form, quantita_anomalia: e.target.value })} />
           </div>
         </div>
 
@@ -88,7 +103,7 @@ function MovimentoModal({ clienteId, clienteNome, onClose, onSaved }) {
 function ClienteRow({ cliente, onRefresh }) {
   const [open, setOpen] = useState(false)
   const [movimenti, setMovimenti] = useState([])
-  const [showModal, setShowModal] = useState(false)
+  const [modal, setModal] = useState(null) // null | 'nuovo' | movimento (per edit)
   const { showToast, ToastComponent } = useToast()
 
   const loadMovimenti = async () => {
@@ -109,20 +124,36 @@ function ClienteRow({ cliente, onRefresh }) {
     onRefresh()
   }
 
+  const afterSave = () => {
+    setModal(null)
+    loadMovimenti()
+    onRefresh()
+    showToast('Salvato con successo!', 'success')
+  }
+
   const saldo = cliente.saldo_con_franchigia ?? cliente.saldo ?? 0
-  // credito nostro (saldo < 0) = il cliente ci deve pallet → valore da recuperare/fatturare
   const euroEpal = cliente.costo_epal || 1
-  const valoreFatturabile = Math.abs(Math.min(0, saldo)) * euroEpal
+  // saldo > 0: il cliente ci deve pallet (credito nostro) → valore fatturabile
+  const valoreFatturabile = Math.max(0, saldo) * euroEpal
 
   return (
     <>
       {ToastComponent}
-      {showModal && (
+      {modal === 'nuovo' && (
         <MovimentoModal
           clienteId={cliente.id}
           clienteNome={cliente.nome}
-          onClose={() => setShowModal(false)}
-          onSaved={() => { setShowModal(false); loadMovimenti(); onRefresh() }}
+          onClose={() => setModal(null)}
+          onSaved={afterSave}
+        />
+      )}
+      {modal && modal !== 'nuovo' && (
+        <MovimentoModal
+          clienteId={cliente.id}
+          clienteNome={cliente.nome}
+          movimento={modal}
+          onClose={() => setModal(null)}
+          onSaved={afterSave}
         />
       )}
       <tr style={{ cursor: 'pointer' }} onClick={toggleOpen}>
@@ -137,20 +168,20 @@ function ClienteRow({ cliente, onRefresh }) {
         </td>
         <td className="mono" style={{ color: 'var(--text3)', fontSize: 12 }}>{cliente.codice || '—'}</td>
         <td className="num">
-          <span className={saldo < 0 ? 'positive' : 'neutral'}>
-            {saldo > 0 ? '+' : ''}{formatNum(saldo)}
+          <span className={saldo > 0 ? 'positive' : saldo < 0 ? 'negative' : 'neutral'}>
+            {saldo !== 0 ? (saldo > 0 ? '+' : '') + formatNum(saldo) : '—'}
           </span>
         </td>
         <td className="num" style={{ color: 'var(--text2)' }}>
-          {saldo < 0 ? `€ ${formatNum(valoreFatturabile)}` : saldo > 0 ? `${formatNum(saldo)} pz` : '—'}
+          {saldo > 0 ? `€ ${formatNum(valoreFatturabile)}` : saldo < 0 ? `${formatNum(Math.abs(saldo))} pz` : '—'}
         </td>
         <td>
-          <span className={`badge ${saldo < 0 ? 'badge-green' : saldo > 0 ? 'badge-blue' : 'badge-gray'}`}>
-            {saldo > 0 ? 'Debito nostro' : saldo < 0 ? 'Credito nostro' : 'Pari'}
+          <span className={`badge ${saldo > 0 ? 'badge-green' : saldo < 0 ? 'badge-blue' : 'badge-gray'}`}>
+            {saldo > 0 ? 'Credito nostro' : saldo < 0 ? 'Debito nostro' : 'Pari'}
           </span>
         </td>
         <td onClick={e => e.stopPropagation()}>
-          <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(true)}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setModal('nuovo')}>
             <Plus size={12} /> Movimento
           </button>
         </td>
@@ -196,9 +227,14 @@ function ClienteRow({ cliente, onRefresh }) {
                           ) : '—'}
                         </td>
                         <td>
-                          <button className="btn btn-danger btn-sm" onClick={() => deleteMovimento(m.id)}>
-                            <Trash2 size={11} />
-                          </button>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setModal(m)}>
+                              <Edit2 size={11} />
+                            </button>
+                            <button className="btn btn-danger btn-sm" onClick={() => deleteMovimento(m.id)}>
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -228,16 +264,18 @@ export default function Clienti() {
 
   useEffect(() => { load() }, [])
 
+  const getSaldo = c => c.saldo_con_franchigia ?? c.saldo ?? 0
+
   const filtered = clienti.filter(c => {
     const matchSearch = c.nome.toLowerCase().includes(search.toLowerCase())
-    if (tab === 'attivi') return matchSearch && !c.a_perdere && (c.saldo_con_franchigia ?? c.saldo ?? 0) !== 0
+    if (tab === 'attivi') return matchSearch && !c.a_perdere && getSaldo(c) !== 0
     if (tab === 'tutti') return matchSearch && !c.a_perdere
     if (tab === 'anomalie') return matchSearch && (c.anomalie_aperte || 0) > 0
     if (tab === 'perdere') return matchSearch && c.a_perdere
     return matchSearch
   })
 
-  const totSaldo = clienti.filter(c => !c.a_perdere).reduce((s, c) => s + Math.max(0, c.saldo_con_franchigia ?? c.saldo ?? 0), 0)
+  const totSaldo = clienti.filter(c => !c.a_perdere).reduce((s, c) => s + Math.max(0, getSaldo(c)), 0)
 
   return (
     <div>
@@ -245,7 +283,7 @@ export default function Clienti() {
         <div>
           <div className="page-title">Clienti</div>
           <div className="page-subtitle">
-            {clienti.filter(c => !c.a_perdere && (c.saldo_con_franchigia ?? c.saldo ?? 0) > 0).length} clienti con saldo attivo · Totale: {formatNum(totSaldo)} pallet
+            {clienti.filter(c => !c.a_perdere && getSaldo(c) > 0).length} clienti con credito · Totale: {formatNum(totSaldo)} pallet
           </div>
         </div>
       </div>
@@ -253,7 +291,8 @@ export default function Clienti() {
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1', minWidth: 200 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }} />
-          <input className="input" placeholder="Cerca cliente..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 32 }} />
+          <input className="input" placeholder="Cerca cliente..." value={search}
+            onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 32 }} />
         </div>
       </div>
 
