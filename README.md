@@ -109,12 +109,4 @@ src/
 
 ---
 
-## Costi
 
-| Servizio | Piano | Costo |
-|----------|-------|-------|
-| Supabase | Free | €0/mese |
-| Vercel | Hobby | €0/mese |
-| GitHub | Free | €0/mese |
-
-Totale: **€0/mese** per sempre, salvo crescita molto elevata dei dati.
