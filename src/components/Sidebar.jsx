@@ -6,7 +6,7 @@ const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'clienti', label: 'Clienti', icon: Users },
   { id: 'corrispondenti', label: 'Corrispondenti', icon: Truck },
-  { id: 'buoni', label: 'Buoni EPAL', icon: Package },
+  { id: 'buoni', label: 'Buoni EPAL', icon: Package, disabled: true },
   { id: 'export', label: 'Esporta / Importa', icon: FileSpreadsheet },
 ]
 
@@ -46,10 +46,10 @@ export default function Sidebar({ page, setPage }) {
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: '12px 8px' }}>
-        {NAV.map(({ id, label, icon: Icon }) => (
+        {NAV.map(({ id, label, icon: Icon, disabled }) => (
           <button
             key={id}
-            onClick={() => setPage(id)}
+            onClick={() => !disabled && setPage(id)}
             style={{
               width: '100%',
               display: 'flex',
@@ -59,18 +59,24 @@ export default function Sidebar({ page, setPage }) {
               borderRadius: 8,
               marginBottom: 2,
               background: page === id ? 'rgba(79,142,247,0.12)' : 'transparent',
-              color: page === id ? 'var(--accent)' : 'var(--text2)',
+              color: disabled ? 'var(--text3)' : page === id ? 'var(--accent)' : 'var(--text2)',
               fontSize: 13,
               fontWeight: page === id ? 500 : 400,
               transition: 'all 0.15s',
               justifyContent: collapsed ? 'center' : 'flex-start',
               border: 'none',
-              cursor: 'pointer',
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              opacity: disabled ? 0.5 : 1,
             }}
-            title={collapsed ? label : ''}
+            title={collapsed ? label : disabled ? 'Coming soon' : ''}
           >
             <Icon size={16} strokeWidth={1.8} style={{ flexShrink: 0 }} />
-            {!collapsed && label}
+            {!collapsed && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {label}
+                {disabled && <span style={{ fontSize: 10, color: 'var(--text3)' }}>soon</span>}
+              </span>
+            )}
           </button>
         ))}
       </nav>

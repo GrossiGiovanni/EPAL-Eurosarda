@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { TrendingUp, TrendingDown, AlertTriangle, Package, RefreshCw } from 'lucide-react'
+import { TrendingUp, AlertTriangle, Package, RefreshCw, Truck } from 'lucide-react'
 import { formatNum } from '../lib/excel'
 
 function KpiCard({ label, value, sub, color, icon: Icon, onClick }) {
@@ -43,14 +43,25 @@ export default function Dashboard({ setPage }) {
     const [{ data: saldi_c }, { data: saldi_k }, { data: anomalie }, { data: ultimo_inv }] = await Promise.all([
       supabase.from('saldi_clienti').select('*').eq('a_perdere', false),
       supabase.from('saldi_corrispondenti').select('*'),
-      supabase.from('movimenti_clienti').select('*').not('anomalia', 'is', null).neq('anomalia', ''),
+      supabase.from('movimenti_clienti').select('id').not('anomalia', 'is', null).neq('anomalia', ''),
       supabase.from('inventario').select('*').order('data', { ascending: false }).limit(1),
     ])
 
     const getSaldo = c => c.saldo_con_franchigia ?? c.saldo ?? 0
-    const totalePallet = (saldi_c || []).reduce((s, c) => s + Math.max(0, getSaldo(c)), 0)
-    const creditiClienti = (saldi_c || []).filter(c => getSaldo(c) < 0).reduce((s, c) => s + getSaldo(c), 0)
+
+    // Clienti: saldo > 0 = il cliente ci deve pallet (credito nostro)
+    const creditiClienti = (saldi_c || [])
+      .filter(c => getSaldo(c) > 0)
+      .reduce((s, c) => s + getSaldo(c), 0)
+
+    const totaliInTransito = (saldi_k || [])
+      .reduce((s, c) => s + (c.pallet_in_transito || 0), 0)
+
+    // EPAL in circolazione = pallet presso clienti (credito) + pallet in transito
+    const epalInCircolazione = creditiClienti + totaliInTransito
+
     const anomalieAperte = (anomalie || []).length
+
     const top10 = (saldi_c || [])
       .filter(c => getSaldo(c) > 0)
       .sort((a, b) => getSaldo(b) - getSaldo(a))
@@ -58,18 +69,20 @@ export default function Dashboard({ setPage }) {
 
     const corrData = (saldi_k || []).map(c => ({
       nome: c.nome,
+      saldo_lordo: Math.max(0, c.saldo_lordo || 0),
+      in_transito: c.pallet_in_transito || 0,
       differenza: c.differenza_totale || 0,
-      saldo: c.saldo_lordo || 0,
     }))
 
     setData({
-      totalePallet,
-      creditiClienti: Math.abs(creditiClienti),
+      epalInCircolazione,
+      creditiClienti,
+      totaliInTransito,
       anomalieAperte,
       inventario: ultimo_inv?.[0]?.quantita,
       top10,
       corrData,
-      totClienti: (saldi_c || []).filter(c => getSaldo(c) !== 0).length,
+      totClienti: (saldi_c || []).filter(c => getSaldo(c) > 0).length,
     })
     setLoading(false)
   }
@@ -98,8 +111,8 @@ export default function Dashboard({ setPage }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
         <KpiCard
           label="EPAL in circolazione"
-          value={formatNum(data.totalePallet)}
-          sub={`${data.totClienti} clienti attivi`}
+          value={formatNum(data.epalInCircolazione)}
+          sub={`Clienti + transito corrispondenti`}
           color="var(--accent)"
           icon={Package}
           onClick={() => setPage('clienti')}
@@ -107,9 +120,18 @@ export default function Dashboard({ setPage }) {
         <KpiCard
           label="Crediti da clienti"
           value={formatNum(data.creditiClienti)}
-          sub="Pallet da ricevere"
+          sub={`${data.totClienti} clienti attivi`}
           color="var(--green)"
           icon={TrendingUp}
+          onClick={() => setPage('clienti')}
+        />
+        <KpiCard
+          label="In transito"
+          value={formatNum(data.totaliInTransito)}
+          sub="Pallet su mezzi non scaricati"
+          color="var(--yellow)"
+          icon={Truck}
+          onClick={() => setPage('corrispondenti')}
         />
         <KpiCard
           label="Anomalie aperte"
@@ -134,7 +156,7 @@ export default function Dashboard({ setPage }) {
         {/* Top clienti */}
         <div className="card">
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 20, color: 'var(--text)' }}>
-            Top 10 clienti per saldo EPAL
+            Top 10 clienti per credito EPAL
           </div>
           {data.top10.length === 0 ? (
             <div className="empty-state"><p>Nessun dato</p></div>
@@ -157,31 +179,48 @@ export default function Dashboard({ setPage }) {
         {/* Corrispondenti */}
         <div className="card">
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 20, color: 'var(--text)' }}>
-            Differenze con corrispondenti
+            Situazione corrispondenti
           </div>
           {data.corrData.length === 0 ? (
             <div className="empty-state"><p>Nessun dato</p></div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {data.corrData.sort((a, b) => Math.abs(b.differenza) - Math.abs(a.differenza)).map(c => (
-                <div key={c.nome} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 90, fontSize: 12, color: 'var(--text2)', flexShrink: 0 }}>{c.nome}</div>
-                  <div style={{ flex: 1, height: 6, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{
-                      height: '100%', borderRadius: 3,
-                      background: c.differenza > 0 ? 'var(--green)' : c.differenza < 0 ? 'var(--red)' : 'var(--border)',
-                      width: `${Math.min(100, Math.abs(c.differenza) / 50 * 100)}%`,
-                      transition: 'width 0.4s ease',
-                    }} />
-                  </div>
-                  <div style={{
-                    fontSize: 12, fontFamily: 'var(--font-mono)', width: 50, textAlign: 'right',
-                    color: c.differenza > 0 ? 'var(--green)' : c.differenza < 0 ? 'var(--red)' : 'var(--text3)'
-                  }}>
-                    {c.differenza > 0 ? '+' : ''}{formatNum(c.differenza)}
-                  </div>
-                </div>
-              ))}
+              {data.corrData
+                .filter(c => c.saldo_lordo > 0 || c.in_transito > 0)
+                .sort((a, b) => (b.saldo_lordo + b.in_transito) - (a.saldo_lordo + a.in_transito))
+                .map(c => {
+                  const totale = c.saldo_lordo + c.in_transito
+                  const maxVal = 200
+                  return (
+                    <div key={c.nome} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 80, fontSize: 12, color: 'var(--text2)', flexShrink: 0 }}>{c.nome}</div>
+                      <div style={{ flex: 1, height: 8, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden', display: 'flex' }}>
+                        {c.saldo_lordo > 0 && (
+                          <div style={{
+                            height: '100%',
+                            background: 'var(--accent)',
+                            width: `${Math.min(100, c.saldo_lordo / maxVal * 100)}%`,
+                          }} title={`Saldo: ${formatNum(c.saldo_lordo)}`} />
+                        )}
+                        {c.in_transito > 0 && (
+                          <div style={{
+                            height: '100%',
+                            background: 'var(--yellow)',
+                            width: `${Math.min(100 - Math.min(100, c.saldo_lordo / maxVal * 100), c.in_transito / maxVal * 100)}%`,
+                          }} title={`In transito: ${formatNum(c.in_transito)}`} />
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', width: 70, textAlign: 'right', color: 'var(--text2)' }}>
+                        {c.in_transito > 0 && <span style={{ color: 'var(--yellow)' }}>{formatNum(c.in_transito)}↑ </span>}
+                        {c.saldo_lordo > 0 && <span>{formatNum(c.saldo_lordo)}</span>}
+                      </div>
+                    </div>
+                  )
+                })}
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4, display: 'flex', gap: 12 }}>
+                <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--accent)', borderRadius: 2, marginRight: 4 }} />Saldo scaricato</span>
+                <span><span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--yellow)', borderRadius: 2, marginRight: 4 }} />In transito</span>
+              </div>
             </div>
           )}
         </div>
