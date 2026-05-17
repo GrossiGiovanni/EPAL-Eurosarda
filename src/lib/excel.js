@@ -237,5 +237,9 @@ export function formatDate(dateStr) {
 
 export function formatNum(n) {
   if (n === null || n === undefined) return '—'
-  return Number(n).toLocaleString('it-IT')
+  const v = Number(n)
+  if (Number.isNaN(v)) return '—'
+  // Arrotonda per eccesso il valore assoluto, mantiene il segno
+  const rounded = v < 0 ? -Math.ceil(Math.abs(v)) : Math.ceil(v)
+  return rounded.toLocaleString('it-IT')
 }

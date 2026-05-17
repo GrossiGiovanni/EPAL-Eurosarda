@@ -357,14 +357,17 @@ export default function Clienti() {
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState('attivi')
 
-  const load = async () => {
-    setLoading(true)
+  // initialLoad solo al primo caricamento mostra lo spinner full-page;
+  // i refresh successivi aggiornano i dati senza smontare la tabella
+  // (così le righe espanse restano aperte dopo aver salvato un movimento)
+  const load = async ({ initialLoad = false } = {}) => {
+    if (initialLoad) setLoading(true)
     const { data } = await supabase.from('saldi_clienti').select('*').order('nome')
     setClienti(data || [])
-    setLoading(false)
+    if (initialLoad) setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load({ initialLoad: true }) }, [])
 
   const getSaldo = c => c.saldo_con_franchigia ?? c.saldo ?? 0
 
