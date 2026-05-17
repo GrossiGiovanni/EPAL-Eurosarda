@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { TrendingUp, AlertTriangle, Package, RefreshCw, Truck } from 'lucide-react'
+import { TrendingUp, AlertTriangle, Package, RefreshCw, Truck, Bell } from 'lucide-react'
 import { formatNum } from '../lib/excel'
 
 function KpiCard({ label, value, sub, color, icon: Icon, onClick }) {
@@ -62,10 +62,26 @@ export default function Dashboard({ setPage }) {
     const totaliInTransito = (saldi_k || [])
       .reduce((s, c) => s + (c.pallet_in_transito || 0), 0)
 
+    const inTransitoClienti = (saldi_c || [])
+      .reduce((s, c) => s + Math.max(0, c.pallet_in_transito || 0), 0)
+
     // EPAL in circolazione = pallet presso clienti (debito) + pallet in transito
-    const epalInCircolazione = debitoClienti + totaliInTransito
+    const epalInCircolazione = debitoClienti + totaliInTransito + inTransitoClienti
 
     const anomalieAperte = (anomalie || []).length
+
+    // Alert attivi: clienti con nota o soglia superata
+    const alertClienti = (saldi_c || [])
+      .filter(c => (c.alert_note && c.alert_note.trim()) || (c.soglia_max != null && getSaldo(c) >= c.soglia_max))
+      .map(c => ({
+        id: c.id,
+        nome: c.nome,
+        saldo: getSaldo(c),
+        soglia_max: c.soglia_max,
+        alert_note: c.alert_note,
+        superata: c.soglia_max != null && getSaldo(c) >= c.soglia_max,
+      }))
+      .sort((a, b) => (b.superata ? 1 : 0) - (a.superata ? 1 : 0))
 
     const top10 = (saldi_c || [])
       .filter(c => getSaldo(c) > 0)
@@ -83,7 +99,9 @@ export default function Dashboard({ setPage }) {
       epalInCircolazione,
       creditiClienti,
       totaliInTransito,
+      inTransitoClienti,
       anomalieAperte,
+      alertClienti,
       inventario: ultimo_inv?.[0]?.quantita,
       top10,
       corrData,
@@ -132,8 +150,8 @@ export default function Dashboard({ setPage }) {
         />
         <KpiCard
           label="In transito"
-          value={formatNum(data.totaliInTransito)}
-          sub="Pallet su mezzi non scaricati"
+          value={formatNum(data.totaliInTransito + data.inTransitoClienti)}
+          sub={`${formatNum(data.totaliInTransito)} corr. · ${formatNum(data.inTransitoClienti)} clienti`}
           color="var(--yellow)"
           icon={Truck}
           onClick={() => setPage('corrispondenti')}
@@ -156,6 +174,48 @@ export default function Dashboard({ setPage }) {
           />
         )}
       </div>
+
+      {data.alertClienti.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderColor: 'rgba(239,68,68,0.25)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <Bell size={15} style={{ color: '#ef4444' }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+              Alert attivi
+            </span>
+            <span className="badge badge-gray" style={{ fontSize: 10 }}>
+              {data.alertClienti.length}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {data.alertClienti.map(a => (
+              <div key={a.id}
+                onClick={() => setPage('clienti')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+                  background: a.superata ? 'rgba(239,68,68,0.08)' : 'var(--bg3)',
+                  border: `1px solid ${a.superata ? 'rgba(239,68,68,0.25)' : 'var(--border)'}`,
+                  borderRadius: 8, cursor: 'pointer',
+                }}>
+                <AlertTriangle size={14} style={{ color: a.superata ? '#ef4444' : 'var(--yellow)', flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{a.nome}</div>
+                  {a.alert_note && (
+                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{a.alert_note}</div>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text2)', fontFamily: 'var(--font-mono)', textAlign: 'right' }}>
+                  <div>{formatNum(a.saldo)} pz</div>
+                  {a.soglia_max != null && (
+                    <div style={{ fontSize: 10, color: a.superata ? '#ef4444' : 'var(--text3)' }}>
+                      soglia: {a.soglia_max}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
         {/* Top clienti */}

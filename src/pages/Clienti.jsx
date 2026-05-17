@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatDate, formatNum } from '../lib/excel'
-import { Plus, Search, ChevronDown, ChevronUp, Edit2, Trash2, AlertCircle, X, Check } from 'lucide-react'
+import { Plus, Search, ChevronDown, ChevronUp, Edit2, Trash2, AlertCircle, X, Check, AlertTriangle, Truck } from 'lucide-react'
 import { useToast } from '../hooks/useToast.jsx'
 
 const ANOMALIE = ['EPAL ROTTO', 'NON-EPAL', 'EPAL NON RESO', 'EPAL NON CONFORME']
@@ -15,9 +15,11 @@ function MovimentoModal({ clienteId, clienteNome, movimento, onClose, onSaved })
     anomalia: movimento.anomalia || '',
     quantita_anomalia: String(movimento.quantita_anomalia || ''),
     riferimento: movimento.riferimento || '',
+    stato: movimento.stato || 'confermato',
   } : {
     data: new Date().toISOString().split('T')[0],
     consegnati: '', affidati: '', anomalia: '', quantita_anomalia: '', riferimento: '',
+    stato: 'confermato',
   })
   const [loading, setLoading] = useState(false)
   const { showToast, ToastComponent } = useToast()
@@ -32,6 +34,7 @@ function MovimentoModal({ clienteId, clienteNome, movimento, onClose, onSaved })
       anomalia: form.anomalia || null,
       quantita_anomalia: parseInt(form.quantita_anomalia) || 0,
       riferimento: form.riferimento || null,
+      stato: form.stato,
     }
     const { error } = isEdit
       ? await supabase.from('movimenti_clienti').update(payload).eq('id', movimento.id)
@@ -89,6 +92,16 @@ function MovimentoModal({ clienteId, clienteNome, movimento, onClose, onSaved })
           </div>
         </div>
 
+        <div className="form-row">
+          <div className="form-group" style={{ flex: 1 }}>
+            <label className="form-label">Stato</label>
+            <select className="input" value={form.stato} onChange={e => setForm({ ...form, stato: e.target.value })}>
+              <option value="confermato">Confermato (incluso nel saldo)</option>
+              <option value="in_transito">In transito (escluso dal saldo)</option>
+            </select>
+          </div>
+        </div>
+
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
           <button className="btn btn-ghost" onClick={onClose}>Annulla</button>
           <button className="btn btn-primary" onClick={save} disabled={loading}>
@@ -104,6 +117,9 @@ function ClienteRow({ cliente, onRefresh }) {
   const [open, setOpen] = useState(false)
   const [movimenti, setMovimenti] = useState([])
   const [modal, setModal] = useState(null) // null | 'nuovo' | movimento (per edit)
+  const [editingAlert, setEditingAlert] = useState(false)
+  const [alertNote, setAlertNote] = useState(cliente.alert_note || '')
+  const [sogliaMax, setSogliaMax] = useState(cliente.soglia_max ?? '')
   const { showToast, ToastComponent } = useToast()
 
   const loadMovimenti = async () => {
@@ -135,6 +151,20 @@ function ClienteRow({ cliente, onRefresh }) {
   const euroEpal = cliente.costo_epal || 1
   // saldo < 0: il cliente ci deve pallet (credito nostro) → valore fatturabile
   const valoreFatturabile = Math.abs(Math.min(0, saldo)) * euroEpal
+  const pallInTransito = cliente.pallet_in_transito || 0
+  const sogliaSuperata = cliente.soglia_max && saldo >= cliente.soglia_max
+  const hasAlert = (cliente.alert_note && cliente.alert_note.trim()) || sogliaSuperata
+
+  const saveAlert = async () => {
+    const { error } = await supabase.from('clienti').update({
+      alert_note: alertNote.trim() || null,
+      soglia_max: sogliaMax === '' ? null : parseInt(sogliaMax),
+    }).eq('id', cliente.id)
+    if (error) { showToast('Errore: ' + error.message, 'error'); return }
+    setEditingAlert(false)
+    onRefresh()
+    showToast('Alert aggiornato', 'success')
+  }
 
   return (
     <>
@@ -161,8 +191,19 @@ function ClienteRow({ cliente, onRefresh }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {open ? <ChevronUp size={13} style={{ color: 'var(--text3)' }} /> : <ChevronDown size={13} style={{ color: 'var(--text3)' }} />}
             <span style={{ fontWeight: 500 }}>{cliente.nome}</span>
+            {sogliaSuperata && (
+              <AlertTriangle size={13} style={{ color: 'var(--red, #ef4444)' }} title={`Soglia superata: ${cliente.soglia_max}`} />
+            )}
+            {hasAlert && !sogliaSuperata && (
+              <AlertCircle size={13} style={{ color: 'var(--yellow)' }} title={cliente.alert_note} />
+            )}
             {(cliente.anomalie_aperte || 0) > 0 && (
               <AlertCircle size={13} style={{ color: 'var(--yellow)' }} />
+            )}
+            {pallInTransito > 0 && (
+              <span className="badge badge-yellow" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <Truck size={10} /> {formatNum(pallInTransito)} in transito
+              </span>
             )}
           </div>
         </td>
@@ -176,9 +217,15 @@ function ClienteRow({ cliente, onRefresh }) {
           {saldo < 0 ? `€ ${formatNum(valoreFatturabile)}` : saldo > 0 ? `${formatNum(saldo)} pz` : '—'}
         </td>
         <td>
-          <span className={`badge ${saldo > 0 ? 'badge-blue' : saldo < 0 ? 'badge-green' : 'badge-gray'}`}>
-            {saldo > 0 ? 'Debito nostro' : saldo < 0 ? 'Credito nostro' : 'Pari'}
-          </span>
+          {sogliaSuperata ? (
+            <span className="badge" style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+              ⚠ Soglia {cliente.soglia_max}
+            </span>
+          ) : (
+            <span className={`badge ${saldo > 0 ? 'badge-blue' : saldo < 0 ? 'badge-green' : 'badge-gray'}`}>
+              {saldo > 0 ? 'Debito nostro' : saldo < 0 ? 'Credito nostro' : 'Pari'}
+            </span>
+          )}
         </td>
         <td onClick={e => e.stopPropagation()}>
           <button className="btn btn-ghost btn-sm" onClick={() => setModal('nuovo')}>
@@ -196,6 +243,51 @@ function ClienteRow({ cliente, onRefresh }) {
                   📧 {cliente.contatto}
                 </div>
               )}
+
+              {/* Alert / soglia editor */}
+              <div style={{
+                background: hasAlert ? 'rgba(239,68,68,0.06)' : 'var(--bg2)',
+                border: `1px solid ${hasAlert ? 'rgba(239,68,68,0.25)' : 'var(--border)'}`,
+                borderRadius: 8, padding: '10px 12px', marginBottom: 12,
+                display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap'
+              }}>
+                {!editingAlert ? (
+                  <>
+                    <AlertTriangle size={14} style={{ color: hasAlert ? '#ef4444' : 'var(--text3)' }} />
+                    <div style={{ flex: 1, fontSize: 12, color: 'var(--text2)' }}>
+                      {cliente.alert_note ? (
+                        <span><b>Nota:</b> {cliente.alert_note}</span>
+                      ) : (
+                        <span style={{ color: 'var(--text3)' }}>Nessuna nota</span>
+                      )}
+                      {cliente.soglia_max != null && (
+                        <span style={{ marginLeft: 12, color: 'var(--text3)' }}>
+                          · Soglia max: <b style={{ color: sogliaSuperata ? '#ef4444' : 'var(--text2)' }}>{cliente.soglia_max}</b>
+                        </span>
+                      )}
+                    </div>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setEditingAlert(true)}>
+                      <Edit2 size={11} /> Modifica
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <input className="input" placeholder="Nota alert (es. Mandare bancali)" value={alertNote}
+                      onChange={e => setAlertNote(e.target.value)} style={{ flex: 1, minWidth: 200 }} />
+                    <input className="input" type="number" placeholder="Soglia" value={sogliaMax}
+                      onChange={e => setSogliaMax(e.target.value)} style={{ width: 100 }} />
+                    <button className="btn btn-primary btn-sm" onClick={saveAlert}>
+                      <Check size={11} /> Salva
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => {
+                      setAlertNote(cliente.alert_note || ''); setSogliaMax(cliente.soglia_max ?? ''); setEditingAlert(false)
+                    }}>
+                      <X size={11} />
+                    </button>
+                  </>
+                )}
+              </div>
+
               {movimenti.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--text3)', padding: '12px 0' }}>Nessun movimento registrato</div>
               ) : (
@@ -207,12 +299,13 @@ function ClienteRow({ cliente, onRefresh }) {
                       <th className="num">Consegnati</th>
                       <th className="num">Affidati</th>
                       <th>Anomalia</th>
+                      <th>Stato</th>
                       <th></th>
                     </tr>
                   </thead>
                   <tbody>
                     {movimenti.map(m => (
-                      <tr key={m.id}>
+                      <tr key={m.id} style={m.stato === 'in_transito' ? { background: 'rgba(245,200,66,0.04)' } : undefined}>
                         <td className="mono">{formatDate(m.data)}</td>
                         <td style={{ color: 'var(--text3)' }}>{m.riferimento || '—'}</td>
                         <td className="num" style={{ color: m.consegnati > 0 ? 'var(--green)' : 'var(--text3)' }}>
@@ -225,6 +318,15 @@ function ClienteRow({ cliente, onRefresh }) {
                           {m.anomalia ? (
                             <span className="badge badge-yellow">{m.anomalia} {m.quantita_anomalia > 0 ? `(${m.quantita_anomalia})` : ''}</span>
                           ) : '—'}
+                        </td>
+                        <td>
+                          {m.stato === 'in_transito' ? (
+                            <span className="badge badge-yellow" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <Truck size={10} /> In transito
+                            </span>
+                          ) : (
+                            <span className="badge badge-gray">Confermato</span>
+                          )}
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: 4 }}>

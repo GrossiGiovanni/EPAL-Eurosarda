@@ -68,9 +68,10 @@ function NuovoCaricaModal({ corrId, corrNome, onClose, onSaved }) {
 }
 
 // Modal fase 2: registra scarico → in_transito → scaricato
-function ScaricaModal({ movimento, corrNome, onClose, onSaved }) {
+function ScaricaModal({ movimento, corrNome, clienti, onClose, onSaved }) {
   const [riscontro, setRiscontro] = useState('')
   const [anomalia, setAnomalia] = useState('')
+  const [clienteId, setClienteId] = useState(movimento.cliente_id || '')
   const [loading, setLoading] = useState(false)
 
   const diff = parseInt(movimento.affidati) - (parseInt(riscontro) || 0)
@@ -82,6 +83,7 @@ function ScaricaModal({ movimento, corrNome, onClose, onSaved }) {
       riscontro_scarico: parseInt(riscontro),
       differenza: diff,
       anomalia: anomalia || null,
+      cliente_id: anomalia ? (clienteId || null) : null,
       stato: 'scaricato',
     }).eq('id', movimento.id)
     setLoading(false)
@@ -118,9 +120,18 @@ function ScaricaModal({ movimento, corrNome, onClose, onSaved }) {
             {ANOMALIE.map(a => <option key={a}>{a}</option>)}
           </select>
         </div>
+        {anomalia && (
+          <div className="form-group">
+            <label className="form-label">Cliente finale (per attribuire l'anomalia) *</label>
+            <select className="input" value={clienteId} onChange={e => setClienteId(e.target.value)}>
+              <option value="">— Seleziona cliente —</option>
+              {(clienti || []).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
           <button className="btn btn-ghost" onClick={onClose}>Annulla</button>
-          <button className="btn btn-primary" onClick={save} disabled={loading || riscontro === ''}>
+          <button className="btn btn-primary" onClick={save} disabled={loading || riscontro === '' || (anomalia && !clienteId)}>
             {loading ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <><Check size={13} /> Conferma scarico</>}
           </button>
         </div>
@@ -130,9 +141,10 @@ function ScaricaModal({ movimento, corrNome, onClose, onSaved }) {
 }
 
 // Modal: modifica scarico già registrato
-function ModificaScaricatoModal({ movimento, corrNome, onClose, onSaved }) {
+function ModificaScaricatoModal({ movimento, corrNome, clienti, onClose, onSaved }) {
   const [riscontro, setRiscontro] = useState(String(movimento.riscontro_scarico ?? ''))
   const [anomalia, setAnomalia] = useState(movimento.anomalia || '')
+  const [clienteId, setClienteId] = useState(movimento.cliente_id || '')
   const [loading, setLoading] = useState(false)
 
   const diff = parseInt(movimento.affidati) - (parseInt(riscontro) || 0)
@@ -143,6 +155,7 @@ function ModificaScaricatoModal({ movimento, corrNome, onClose, onSaved }) {
       riscontro_scarico: parseInt(riscontro) || 0,
       differenza: diff,
       anomalia: anomalia || null,
+      cliente_id: anomalia ? (clienteId || null) : null,
     }).eq('id', movimento.id)
     setLoading(false)
     if (!error) onSaved()
@@ -178,9 +191,18 @@ function ModificaScaricatoModal({ movimento, corrNome, onClose, onSaved }) {
             {ANOMALIE.map(a => <option key={a}>{a}</option>)}
           </select>
         </div>
+        {anomalia && (
+          <div className="form-group">
+            <label className="form-label">Cliente finale (per attribuire l'anomalia) *</label>
+            <select className="input" value={clienteId} onChange={e => setClienteId(e.target.value)}>
+              <option value="">— Seleziona cliente —</option>
+              {(clienti || []).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
           <button className="btn btn-ghost" onClick={onClose}>Annulla</button>
-          <button className="btn btn-primary" onClick={save} disabled={loading}>
+          <button className="btn btn-primary" onClick={save} disabled={loading || (anomalia && !clienteId)}>
             {loading ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <><Check size={13} /> Salva</>}
           </button>
         </div>
@@ -189,7 +211,7 @@ function ModificaScaricatoModal({ movimento, corrNome, onClose, onSaved }) {
   )
 }
 
-function CorrRow({ corr, onRefresh }) {
+function CorrRow({ corr, clienti, onRefresh }) {
   const [open, setOpen] = useState(false)
   const [movimenti, setMovimenti] = useState([])
   const [modal, setModal] = useState(null) // null | 'carico' | { type: 'scarica'|'modifica', mov }
@@ -220,12 +242,13 @@ function CorrRow({ corr, onRefresh }) {
     showToast('Salvato con successo!', 'success')
   }
 
+  const isTrazionista = corr.tipo === 'trazionista'
   const saldo = corr.saldo_con_franchigia ?? corr.saldo_lordo ?? 0
   const diff = corr.differenza_totale || 0
   const franchigia = corr.franchigia_pct || 0
   const inTransito = corr.pallet_in_transito || 0
-  const nessunVerbale = NESSUN_VERBALE.has(corr.nome)
-  const sogliaAlert = franchigia > 0 && Math.abs(diff) > (saldo * franchigia) && saldo > 0
+  const nessunVerbale = NESSUN_VERBALE.has(corr.nome) || isTrazionista
+  const sogliaAlert = !isTrazionista && franchigia > 0 && Math.abs(diff) > (saldo * franchigia) && saldo > 0
 
   return (
     <>
@@ -234,10 +257,10 @@ function CorrRow({ corr, onRefresh }) {
         <NuovoCaricaModal corrId={corr.id} corrNome={corr.nome} onClose={() => setModal(null)} onSaved={afterSave} />
       )}
       {modal?.type === 'scarica' && (
-        <ScaricaModal movimento={modal.mov} corrNome={corr.nome} onClose={() => setModal(null)} onSaved={afterSave} />
+        <ScaricaModal movimento={modal.mov} corrNome={corr.nome} clienti={clienti} onClose={() => setModal(null)} onSaved={afterSave} />
       )}
       {modal?.type === 'modifica' && (
-        <ModificaScaricatoModal movimento={modal.mov} corrNome={corr.nome} onClose={() => setModal(null)} onSaved={afterSave} />
+        <ModificaScaricatoModal movimento={modal.mov} corrNome={corr.nome} clienti={clienti} onClose={() => setModal(null)} onSaved={afterSave} />
       )}
 
       <tr style={{ cursor: 'pointer' }} onClick={toggleOpen}>
@@ -265,16 +288,20 @@ function CorrRow({ corr, onRefresh }) {
             : <span style={{ color: 'var(--text3)' }}>—</span>
           }
         </td>
-        <td className="num">
-          <span style={{ color: diff > 0 ? 'var(--red)' : diff < 0 ? 'var(--green)' : 'var(--text3)' }}>
-            {diff !== 0 ? (diff > 0 ? '+' : '') + formatNum(diff) : '—'}
-          </span>
-        </td>
-        <td>
-          <span className={`badge ${franchigia > 0 ? 'badge-yellow' : 'badge-gray'}`}>
-            {franchigia > 0 ? `${(franchigia * 100).toFixed(0)}%` : '0%'}
-          </span>
-        </td>
+        {!isTrazionista && (
+          <td className="num">
+            <span style={{ color: diff > 0 ? 'var(--red)' : diff < 0 ? 'var(--green)' : 'var(--text3)' }}>
+              {diff !== 0 ? (diff > 0 ? '+' : '') + formatNum(diff) : '—'}
+            </span>
+          </td>
+        )}
+        {!isTrazionista && (
+          <td>
+            <span className={`badge ${franchigia > 0 ? 'badge-yellow' : 'badge-gray'}`}>
+              {franchigia > 0 ? `${(franchigia * 100).toFixed(0)}%` : '0%'}
+            </span>
+          </td>
+        )}
         <td onClick={e => e.stopPropagation()}>
           <button className="btn btn-ghost btn-sm" onClick={() => setModal('carico')}>
             <Plus size={12} /> Carico
@@ -284,7 +311,7 @@ function CorrRow({ corr, onRefresh }) {
 
       {open && (
         <tr>
-          <td colSpan={7} style={{ padding: 0, background: 'var(--bg3)' }}>
+          <td colSpan={isTrazionista ? 5 : 7} style={{ padding: 0, background: 'var(--bg3)' }}>
             <div style={{ padding: '12px 20px 16px' }}>
               {corr.contatto && <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>📧 {corr.contatto}</div>}
               {movimenti.length === 0 ? (
@@ -297,14 +324,16 @@ function CorrRow({ corr, onRefresh }) {
                       <th>Data</th>
                       <th>Distinta</th>
                       <th className="num">Affidati</th>
-                      <th className="num">Riscontro</th>
-                      <th className="num">Diff.</th>
+                      {!isTrazionista && <th className="num">Riscontro</th>}
+                      {!isTrazionista && <th className="num">Diff.</th>}
                       <th>Anomalia</th>
                       <th></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {movimenti.map(m => (
+                    {movimenti.map(m => {
+                      const clienteAnomalia = m.cliente_id ? clienti.find(c => c.id === m.cliente_id) : null
+                      return (
                       <tr key={m.id}>
                         <td>
                           {m.stato === 'in_transito'
@@ -315,17 +344,26 @@ function CorrRow({ corr, onRefresh }) {
                         <td className="mono">{formatDate(m.data)}</td>
                         <td style={{ color: 'var(--text3)' }}>{m.distinta || '—'}</td>
                         <td className="num">{formatNum(m.affidati)}</td>
-                        <td className="num">{m.riscontro_scarico != null ? formatNum(m.riscontro_scarico) : '—'}</td>
-                        <td className="num">
-                          {m.stato === 'scaricato'
-                            ? <span style={{ color: (m.differenza || 0) > 0 ? 'var(--red)' : (m.differenza || 0) < 0 ? 'var(--green)' : 'var(--text3)' }}>
-                              {(m.differenza || 0) !== 0 ? ((m.differenza || 0) > 0 ? '+' : '') + formatNum(m.differenza) : '—'}
-                            </span>
-                            : <span style={{ color: 'var(--text3)' }}>—</span>
-                          }
-                        </td>
+                        {!isTrazionista && <td className="num">{m.riscontro_scarico != null ? formatNum(m.riscontro_scarico) : '—'}</td>}
+                        {!isTrazionista && (
+                          <td className="num">
+                            {m.stato === 'scaricato'
+                              ? <span style={{ color: (m.differenza || 0) > 0 ? 'var(--red)' : (m.differenza || 0) < 0 ? 'var(--green)' : 'var(--text3)' }}>
+                                {(m.differenza || 0) !== 0 ? ((m.differenza || 0) > 0 ? '+' : '') + formatNum(m.differenza) : '—'}
+                              </span>
+                              : <span style={{ color: 'var(--text3)' }}>—</span>
+                            }
+                          </td>
+                        )}
                         <td>
-                          {m.anomalia ? <span className="badge badge-yellow">{m.anomalia}</span> : '—'}
+                          {m.anomalia ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <span className="badge badge-yellow">{m.anomalia}</span>
+                              {clienteAnomalia && (
+                                <span style={{ fontSize: 10, color: 'var(--text3)' }}>→ {clienteAnomalia.nome}</span>
+                              )}
+                            </div>
+                          ) : '—'}
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: 4 }}>
@@ -348,7 +386,7 @@ function CorrRow({ corr, onRefresh }) {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               )}
@@ -362,19 +400,25 @@ function CorrRow({ corr, onRefresh }) {
 
 export default function Corrispondenti() {
   const [corr, setCorr] = useState([])
+  const [clienti, setClienti] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('corrispondente')
 
   const load = async () => {
     setLoading(true)
-    const { data } = await supabase.from('saldi_corrispondenti').select('*').order('nome')
-    setCorr(data || [])
+    const [{ data: corrData }, { data: cliData }] = await Promise.all([
+      supabase.from('saldi_corrispondenti').select('*').order('nome'),
+      supabase.from('clienti').select('id, nome').eq('a_perdere', false).order('nome'),
+    ])
+    setCorr(corrData || [])
+    setClienti(cliData || [])
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
 
   const filtered = corr.filter(c => c.tipo === tab)
+  const showCols = tab !== 'trazionista'
 
   return (
     <div>
@@ -407,13 +451,13 @@ export default function Corrispondenti() {
                 <th>Tipo</th>
                 <th className="num">Saldo EPAL</th>
                 <th className="num">In transito</th>
-                <th className="num">Differenza</th>
-                <th>Franchigia</th>
+                {showCols && <th className="num">Differenza</th>}
+                {showCols && <th>Franchigia</th>}
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(c => <CorrRow key={c.id} corr={c} onRefresh={load} />)}
+              {filtered.map(c => <CorrRow key={c.id} corr={c} clienti={clienti} onRefresh={load} />)}
             </tbody>
           </table>
         )}
